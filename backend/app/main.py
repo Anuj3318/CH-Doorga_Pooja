@@ -1,4 +1,4 @@
-﻿"""Portable FastAPI backend for Chhabinathpur Durga Pooja Samiti."""
+"""Portable FastAPI backend for Chhabinathpur Durga Pooja Samiti."""
 from __future__ import annotations
 
 import hashlib
@@ -192,9 +192,26 @@ def clean_content(collection: str, values: dict[str, Any]) -> dict[str, Any]:
 async def health() -> dict[str, Any]: return {"status": "ok", "storage": "mongodb" if db is not None else "memory"}
 @app.post("/api/admin/login")
 async def login(body: LoginIn) -> dict[str, str]:
-    user = await one_doc("admins", {"username": clean(body.username, 64)})
-    if not user or not user.get("active", True) or not PWD.verify(body.password, user["password_hash"]):
+    username = clean(body.username, 64)
+
+    # one_doc() returns a public document and intentionally removes password_hash.
+    # Login must read the private admin document so the stored password hash is available.
+    if db is not None:
+        user = await db["admins"].find_one({"username": username})
+    else:
+        user = next(
+            (x.copy() for x in memory["admins"] if x.get("username") == username),
+            None,
+        )
+
+    if (
+        not user
+        or not user.get("active", True)
+        or not user.get("password_hash")
+        or not PWD.verify(body.password, user["password_hash"])
+    ):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
+
     return {"access_token": make_token(user["username"]), "token_type": "bearer"}
 @app.get("/api/site-settings")
 async def get_settings() -> dict[str, Any]:
@@ -327,7 +344,6 @@ async def receipt(doc_id: str, _: dict = Depends(admin_user)) -> HTMLResponse:
     safe_reference = escape(str(donation.get("transaction_reference") or "Not provided"))
     html = f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><title>{safe_receipt} | Donation Receipt</title><style>body{{font-family:Arial,sans-serif;background:#f4efe5;padding:35px;color:#241618}}.receipt{{max-width:720px;margin:auto;background:#fff;padding:55px;border-top:10px solid #741827;box-shadow:0 5px 20px #0002}}h1{{color:#741827;margin-bottom:4px}}h2{{color:#a67b2f;font-size:17px;letter-spacing:1px}}.line{{border-top:1px solid #dbcaa6;margin:26px 0}}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:22px}}.label{{font-size:12px;text-transform:uppercase;color:#756969;letter-spacing:1px}}.value{{font-size:17px;font-weight:bold;margin-top:4px}}footer{{margin-top:42px;color:#756969;font-size:13px}}button{{background:#741827;color:white;border:0;padding:11px 16px;cursor:pointer}}@media print{{body{{background:white;padding:0}}.receipt{{box-shadow:none}}button{{display:none}}}}</style></head><body><main class='receipt'><h1>CHHABINATHPUR DURGA POOJA SAMITI</h1><h2>DONATION RECEIPT</h2><div class='line'></div><div class='grid'><div><div class='label'>Receipt No.</div><div class='value'>{safe_receipt}</div></div><div><div class='label'>Status</div><div class='value'>Verified</div></div><div><div class='label'>Donor</div><div class='value'>{safe_donor}</div></div><div><div class='label'>Amount</div><div class='value'>{amount}</div></div><div><div class='label'>Payment Method</div><div class='value'>{safe_method}</div></div><div><div class='label'>Transaction Reference</div><div class='value'>{safe_reference}</div></div><div><div class='label'>Verification Date</div><div class='value'>{verified_date}</div></div></div><footer><p>Thank you for your contribution.</p><p>Jai Maa Durga</p></footer><button onclick='window.print()'>Print Receipt</button></main></body></html>"""
     return HTMLResponse(html, headers={"Content-Disposition": f"inline; filename={safe_receipt}.html"})
-
 
 
 
