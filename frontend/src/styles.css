@@ -4,3 +4,33 @@
 @media(max-width:820px){.nav{padding:10px 18px}.menu-toggle{display:block}.nav-links{display:none;position:absolute;top:76px;left:0;right:0;background:#fffaf1;border-bottom:1px solid var(--line);padding:17px 24px;align-items:stretch;gap:6px}.nav-links.open{display:flex;flex-direction:column}.nav-links>a{padding:10px}.hero{min-height:600px;padding:65px 28px}.hero-emblem{display:none}.hero:before{inset:12px}.hero-copy{max-width:100%}.hero-dates span{font-size:12px}.button-row{align-items:stretch}.countdown-band{display:block;text-align:center}.countdown{justify-content:center;gap:5px}.countdown>div{min-width:62px}.quick-actions{grid-template-columns:repeat(2,1fr)}.quick-actions a:nth-child(2){border-right:0}.section{padding:62px 28px}.story-grid,.feature-split,.location-card,.maadurga-hero{grid-template-columns:1fr;gap:35px}.aarti-cards,.program-grid{grid-template-columns:1fr}.schedule-preview{grid-template-columns:1fr 1fr}.gallery-teaser{grid-template-columns:1fr}.gallery-teaser .art-card{min-height:190px}.donation-panel{grid-template-columns:1fr;gap:30px}.donation-panel .section-heading{margin-bottom:0}.financial{max-width:500px}.founders{grid-template-columns:1fr 1fr}.committee-strip{grid-template-columns:repeat(3,1fr)}.footer-grid,.footer-bottom{grid-template-columns:1fr;display:grid}.footer-bottom{gap:8px}.detail-grid{grid-template-columns:1fr 1fr;padding:40px 28px}.schedule-table article{grid-template-columns:1fr;gap:8px}.schedule-table>article>strong{text-align:left}.donate-grid{grid-template-columns:1fr;margin:40px auto}.permanent-qr{gap:25px;flex-direction:column;text-align:center}.committee-grid{grid-template-columns:1fr 1fr;padding:40px 28px}.contact-grid{grid-template-columns:1fr}.admin{grid-template-columns:1fr}.admin aside{grid-template-columns:repeat(3,1fr);padding:16px}.admin aside .brand,.admin aside p{grid-column:1/-1}.admin-main{padding:28px}.metric-grid{grid-template-columns:repeat(2,1fr)}.admin-stack{grid-template-columns:1fr}.admin-form.settings{grid-template-columns:1fr}}
 @media(max-width:460px){h1{font-size:39px}.nav .brand span{font-size:11px}.nav .brand svg{width:45px}.quick-actions{grid-template-columns:1fr}.quick-actions a{border-right:0;border-bottom:1px solid #9c711b}.countdown strong{font-size:24px}.section,.page-title{padding-left:20px;padding-right:20px}.founders,.committee-grid,.detail-grid,.schedule-preview{grid-template-columns:1fr}.committee-strip{grid-template-columns:repeat(2,1fr)}.location-card.large{margin:35px 20px;padding:28px}.gallery-grid{padding:35px 20px}.admin-main{padding:20px}.admin aside{grid-template-columns:1fr 1fr}.metric-grid{grid-template-columns:1fr 1fr}.metric-grid strong{font-size:21px}.donations article{align-items:start;flex-direction:column}.admin-list article{align-items:start}.admin-list article>div:last-child{flex-wrap:wrap}}
 .visitor-count{font-size:12px;color:#cfbfaa}
+/* Maa Durga background portrait */
+.hero {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 12%;
+  width: 48%;
+  height: 100%;
+  background-image: url("/maa-durga-hero-face.png");
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: contain;
+  opacity: 0.72;
+  z-index: -1;
+  pointer-events: none;
+  filter: saturate(0.9);
+}
+
+/* Keep website content above the portrait */
+.hero-copy,
+.hero-emblem {
+  position: relative;
+  z-index: 2;
+}
