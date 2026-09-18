@@ -1,0 +1,15 @@
+﻿services:
+  - type: web
+    name: chhabinathpur-durga-pooja-api
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: ALLOW_MEMORY_STORE
+        value: "false"
+      - key: MONGO_DB
+        value: chhabinathpur_durga_pooja
+      - key: SECRET_KEY
+        generateValue: true
