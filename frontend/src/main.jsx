@@ -7,7 +7,7 @@ const defaultSettings = {
   organization_name: 'Chhabinathpur Durga Pooja Samiti', upi_id: '8172938399@ybl',
   address: 'Chhabinathpur, Jigna, Mirzapur, Uttar Pradesh - 231313',
   puja_venue: 'Near Pawan Ki Dukan, Chhabinathpur', puja_start_date: '2026-10-11', visarjan_date: '2026-10-20',
-  morning_aarti: '7:30 AM', evening_aarti: '7:00 PM', footer_text: 'Jai Maa Durga', maps_url: '', contact_number: '', whatsapp_number: '', email: ''
+  morning_aarti: '7:30 AM', evening_aarti: '7:00 PM', footer_text: 'Jai Maa Durga', maps_url: '', contact_number: '8172938399', whatsapp_number: '', email: ''
 }
 const internal = new Set(['/', '/about', '/schedule', '/maadurga', '/programs', '/gallery', '/donate', '/committee', '/village', '/announcements', '/contact', '/admin/login', '/admin/dashboard'])
 function navigate(path) { window.history.pushState({}, '', path); window.dispatchEvent(new PopStateEvent('popstate')) }
