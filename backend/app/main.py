@@ -127,7 +127,9 @@ async def save_settings(values: dict[str, Any]) -> dict[str, Any]:
     if db is not None:
         await db.site_settings.update_one({"key": "site"}, {"$set": {**clean_values, "key": "site", "updated_at": now()}}, upsert=True)
     else: memory_settings.update(clean_values)
-    return await settings()
+    # MongoDB adds an internal _id (ObjectId) to the site_settings document.
+    # Remove private MongoDB fields before FastAPI/Pydantic serializes the response.
+    return public(await settings())
 
 @app.on_event("startup")
 async def startup() -> None:
@@ -344,6 +346,5 @@ async def receipt(doc_id: str, _: dict = Depends(admin_user)) -> HTMLResponse:
     safe_reference = escape(str(donation.get("transaction_reference") or "Not provided"))
     html = f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><title>{safe_receipt} | Donation Receipt</title><style>body{{font-family:Arial,sans-serif;background:#f4efe5;padding:35px;color:#241618}}.receipt{{max-width:720px;margin:auto;background:#fff;padding:55px;border-top:10px solid #741827;box-shadow:0 5px 20px #0002}}h1{{color:#741827;margin-bottom:4px}}h2{{color:#a67b2f;font-size:17px;letter-spacing:1px}}.line{{border-top:1px solid #dbcaa6;margin:26px 0}}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:22px}}.label{{font-size:12px;text-transform:uppercase;color:#756969;letter-spacing:1px}}.value{{font-size:17px;font-weight:bold;margin-top:4px}}footer{{margin-top:42px;color:#756969;font-size:13px}}button{{background:#741827;color:white;border:0;padding:11px 16px;cursor:pointer}}@media print{{body{{background:white;padding:0}}.receipt{{box-shadow:none}}button{{display:none}}}}</style></head><body><main class='receipt'><h1>CHHABINATHPUR DURGA POOJA SAMITI</h1><h2>DONATION RECEIPT</h2><div class='line'></div><div class='grid'><div><div class='label'>Receipt No.</div><div class='value'>{safe_receipt}</div></div><div><div class='label'>Status</div><div class='value'>Verified</div></div><div><div class='label'>Donor</div><div class='value'>{safe_donor}</div></div><div><div class='label'>Amount</div><div class='value'>{amount}</div></div><div><div class='label'>Payment Method</div><div class='value'>{safe_method}</div></div><div><div class='label'>Transaction Reference</div><div class='value'>{safe_reference}</div></div><div><div class='label'>Verification Date</div><div class='value'>{verified_date}</div></div></div><footer><p>Thank you for your contribution.</p><p>Jai Maa Durga</p></footer><button onclick='window.print()'>Print Receipt</button></main></body></html>"""
     return HTMLResponse(html, headers={"Content-Disposition": f"inline; filename={safe_receipt}.html"})
-
 
 
