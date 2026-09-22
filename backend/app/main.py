@@ -1,6 +1,7 @@
 """Portable FastAPI backend for Chhabinathpur Durga Pooja Samiti."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import re
@@ -12,6 +13,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+import cloudinary
+import cloudinary.uploader
 import jwt
 import qrcode
 from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile, status
@@ -23,8 +26,19 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Keep the local uploads directory for older images uploaded before
+# Cloudinary integration. New gallery images are stored in Cloudinary.
 UPLOAD_DIR = ROOT / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# Cloudinary credentials are supplied through Render Environment Variables.
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    secure=True,
+)
 SECRET_KEY = os.getenv("SECRET_KEY", "development-only-change-me-before-deploying")
 MONGO_URL = os.getenv("MONGO_URL", "")
 MONGO_DB = os.getenv("MONGO_DB", "chhabinathpur_durga_pooja")
@@ -292,27 +306,122 @@ async def admin_update(collection: str, doc_id: str, values: dict[str, Any], _: 
     return await change_doc(collection, doc_id, clean_content(collection, values))
 @app.delete("/api/admin/{collection}/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete(collection: str, doc_id: str, _: dict = Depends(admin_user)) -> None:
-    if collection not in ADMIN_COLLECTIONS | {"gallery"}: raise HTTPException(404, "Unknown collection")
-    image = await one_doc(collection, {"id": doc_id}) if collection == "gallery" else None
-    await remove_doc(collection, doc_id)
-    if image and image.get("stored_name"):
-        try: (UPLOAD_DIR / image["stored_name"]).unlink(missing_ok=True)
-        except OSError: pass
+    if collection not in ADMIN_COLLECTIONS | {"gallery"}:
+        raise HTTPException(404, "Unknown collection")
 
-ALLOWED_MIMES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
+    image = await one_doc(collection, {"id": doc_id}) if collection == "gallery" else None
+
+    await remove_doc(collection, doc_id)
+
+    # Delete new gallery images from Cloudinary.
+    if image and image.get("cloudinary_public_id"):
+        try:
+            await asyncio.to_thread(
+                cloudinary.uploader.destroy,
+                image["cloudinary_public_id"],
+                resource_type="image",
+                invalidate=True,
+            )
+        except Exception:
+            # Database deletion has already succeeded.
+            pass
+
+    # Keep compatibility with images uploaded before Cloudinary integration.
+    elif image and image.get("stored_name"):
+        try:
+            (UPLOAD_DIR / image["stored_name"]).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+ALLOWED_MIMES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+
 @app.post("/api/admin/gallery/upload", status_code=status.HTTP_201_CREATED)
-async def upload_gallery(file: UploadFile = File(...), caption: str = "", year: str = "2026", category: str = "Maa Durga", _: dict = Depends(admin_user)) -> dict[str, Any]:
-    if file.content_type not in ALLOWED_MIMES: raise HTTPException(415, "Only JPEG, PNG and WebP images are allowed")
+async def upload_gallery(
+    file: UploadFile = File(...),
+    caption: str = "",
+    year: str = "2026",
+    category: str = "Maa Durga",
+    _: dict = Depends(admin_user),
+) -> dict[str, Any]:
+    # Validate MIME type.
+    if file.content_type not in ALLOWED_MIMES:
+        raise HTTPException(
+            415,
+            "Only JPEG, PNG and WebP images are allowed",
+        )
+
     contents = await file.read(MAX_UPLOAD_BYTES + 1)
-    if len(contents) > MAX_UPLOAD_BYTES: raise HTTPException(413, "Image is larger than the allowed 5 MB limit")
-    if not contents: raise HTTPException(422, "Uploaded image is empty")
-    # Verify magic bytes so extension and browser-provided MIME type cannot bypass validation.
-    magic = {b"\xff\xd8\xff": ".jpg", b"\x89PNG\r\n\x1a\n": ".png", b"RIFF": ".webp"}
-    suffix = next((ext for signature, ext in magic.items() if contents.startswith(signature)), None)
-    if suffix is None or suffix != ALLOWED_MIMES[file.content_type]: raise HTTPException(415, "Image content does not match its declared type")
-    stored_name = f"{uuid.uuid4().hex}{suffix}"
-    (UPLOAD_DIR / stored_name).write_bytes(contents)
-    return await add_doc("gallery", {"image_url": f"/uploads/{stored_name}", "stored_name": stored_name, "caption": clean(caption, 250), "year": clean(year, 20), "category": clean(category, 80)})
+
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            413,
+            "Image is larger than the allowed 5 MB limit",
+        )
+
+    if not contents:
+        raise HTTPException(422, "Uploaded image is empty")
+
+    # Verify magic bytes so extension and browser-provided MIME type
+    # cannot bypass validation.
+    magic = {
+        b"\xff\xd8\xff": ".jpg",
+        b"\x89PNG\r\n\x1a\n": ".png",
+        b"RIFF": ".webp",
+    }
+    suffix = next(
+        (ext for signature, ext in magic.items() if contents.startswith(signature)),
+        None,
+    )
+
+    if suffix is None or suffix != ALLOWED_MIMES[file.content_type]:
+        raise HTTPException(
+            415,
+            "Image content does not match its declared type",
+        )
+
+    # Upload to Cloudinary. The Cloudinary SDK call is synchronous, so run
+    # it in a worker thread rather than blocking FastAPI's event loop.
+    try:
+        result = await asyncio.to_thread(
+            cloudinary.uploader.upload,
+            BytesIO(contents),
+            folder="chhabinathpur-durga-pooja/gallery",
+            resource_type="image",
+            unique_filename=True,
+            overwrite=False,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            502,
+            f"Image upload failed: {str(exc)}",
+        )
+
+    image_url = result.get("secure_url")
+    public_id = result.get("public_id")
+
+    if not image_url or not public_id:
+        raise HTTPException(
+            502,
+            "Cloudinary did not return a valid image URL",
+        )
+
+    # Store the permanent Cloudinary URL and public ID in MongoDB.
+    return await add_doc(
+        "gallery",
+        {
+            "image_url": image_url,
+            "cloudinary_public_id": public_id,
+            "caption": clean(caption, 250),
+            "year": clean(year, 20),
+            "category": clean(category, 80),
+        },
+    )
 async def next_receipt_number() -> str:
     if db is not None:
         from pymongo import ReturnDocument
@@ -346,5 +455,4 @@ async def receipt(doc_id: str, _: dict = Depends(admin_user)) -> HTMLResponse:
     safe_reference = escape(str(donation.get("transaction_reference") or "Not provided"))
     html = f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><title>{safe_receipt} | Donation Receipt</title><style>body{{font-family:Arial,sans-serif;background:#f4efe5;padding:35px;color:#241618}}.receipt{{max-width:720px;margin:auto;background:#fff;padding:55px;border-top:10px solid #741827;box-shadow:0 5px 20px #0002}}h1{{color:#741827;margin-bottom:4px}}h2{{color:#a67b2f;font-size:17px;letter-spacing:1px}}.line{{border-top:1px solid #dbcaa6;margin:26px 0}}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:22px}}.label{{font-size:12px;text-transform:uppercase;color:#756969;letter-spacing:1px}}.value{{font-size:17px;font-weight:bold;margin-top:4px}}footer{{margin-top:42px;color:#756969;font-size:13px}}button{{background:#741827;color:white;border:0;padding:11px 16px;cursor:pointer}}@media print{{body{{background:white;padding:0}}.receipt{{box-shadow:none}}button{{display:none}}}}</style></head><body><main class='receipt'><h1>CHHABINATHPUR DURGA POOJA SAMITI</h1><h2>DONATION RECEIPT</h2><div class='line'></div><div class='grid'><div><div class='label'>Receipt No.</div><div class='value'>{safe_receipt}</div></div><div><div class='label'>Status</div><div class='value'>Verified</div></div><div><div class='label'>Donor</div><div class='value'>{safe_donor}</div></div><div><div class='label'>Amount</div><div class='value'>{amount}</div></div><div><div class='label'>Payment Method</div><div class='value'>{safe_method}</div></div><div><div class='label'>Transaction Reference</div><div class='value'>{safe_reference}</div></div><div><div class='label'>Verification Date</div><div class='value'>{verified_date}</div></div></div><footer><p>Thank you for your contribution.</p><p>Jai Maa Durga</p></footer><button onclick='window.print()'>Print Receipt</button></main></body></html>"""
     return HTMLResponse(html, headers={"Content-Disposition": f"inline; filename={safe_receipt}.html"})
-
 
